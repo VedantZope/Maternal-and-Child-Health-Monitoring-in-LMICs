@@ -21,12 +21,6 @@ The overarching goal of this research is to validate the capability of machine l
 1. The dataset can offer precise estimates of village and neighborhood-level indicators, such as child undernutrition, anemia in children and women of reproductive age, child and maternal mortality, and episodes of childhood illnesses.
 2. The indicators can be pinpointed accurately both for specific timeframes and longitudinally across a span of time.
 
-## Authors
-
-- [@VedantZope](https://www.github.com/VedantZope) - Tasks: 
-- [@SohamTripathy](https://github.com/ST172001) - Tasks:
-- [@KushagraParmeshwar](https://www.github.com/kush8725) - Tasks:
-
 ## Dataset
 
 The datasets, both for training and testing, were majorly extracted from:
@@ -92,6 +86,10 @@ At its core, this is a multi-target regression task where dataset features are e
     │       └── visualize.py
     │
     └── tox.ini            <- tox file with settings for running tox; see tox.readthedocs.io
+
+## Authors
+
+- [@VedantZope](https://www.github.com/VedantZope)
 
 ## Acknowledgements
 
