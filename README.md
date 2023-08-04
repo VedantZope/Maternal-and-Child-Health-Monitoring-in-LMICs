@@ -23,9 +23,7 @@ The overarching goal of this research is to validate the capability of machine l
 
 ## Authors
 
-- [@VedantZope](https://www.github.com/VedantZope) - Tasks: 
-- [@SohamTripathy](https://github.com/ST172001) - Tasks:
-- [@KushagraParmeshwar](https://www.github.com/kush8725) - Tasks:
+- [@VedantZope](https://www.github.com/VedantZope)
 
 ## Dataset
 
