@@ -7,6 +7,12 @@ def load_data(filepath):
     df = pd.read_csv(filepath)
     return df
 
+def labels_list():
+    labels = ['Mean_BMI', 'Median_BMI',
+           'Unmet_Need_Rate', 'Under5_Mortality_Rate',
+         'Skilled_Birth_Attendant_Rate', 'Stunted_Rate']
+    return labels
+
 
 def one_hot_encode(df, columns):
     df = pd.get_dummies(df, columns=columns)
