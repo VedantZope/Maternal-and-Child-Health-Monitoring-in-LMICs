@@ -1,3 +1,16 @@
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+from tqdm import tqdm
+import joblib
+import numpy as np
+from sklearn.multioutput import RegressorChain
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from catboost import CatBoostRegressor
+import optuna
+import os
 import pandas as pd
 import numpy as np
 import warnings
@@ -13,10 +26,8 @@ from sklearn.preprocessing import RobustScaler, StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 from tqdm.notebook import tqdm
 import joblib
-import optuna
 from sklearn.model_selection import KFold
-from sklearn.multioutput import RegressorChain
-from xgboost import XGBRegressor
+
 
 def evaluate_order_kfold(models, order, X, y, n_splits=5):
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=1)
@@ -178,7 +189,7 @@ def fit_transform_iterative_imputer(df, n_iter, random_state=None):
     }
     
     # Initialize the iterative imputer with XGBRegressor
-    imputer = IterativeImputer(estimator=XGBRegressor(**xgb_iconfig), max_iter=n_iter, random_state=random_state)
+    imputer = IterativeImputer(estimator=XGBRegressor(n_jobs=40,**xgb_iconfig), max_iter=n_iter, random_state=random_state)
     
     # Fit and transform the dataframe
     imputed_data = imputer.fit_transform(df)
@@ -305,7 +316,7 @@ def obj_columns(df):
 def split_data_country_wise(df):
     if 'Country_Code' not in df.columns.to_list():
         raise Exception("dataframe doesnt have a column named Country_Code, use country_region_mapping(df) to get it")
-    labels = labels_list()
+  
     X = df.drop(columns=labels)
     y = df[labels]
     # Unique country codes
@@ -409,3 +420,297 @@ def nan_percentage(df):
 # Define the function to calculate MCRMSE
 def mcrmse(y_true, y_pred):
     return np.mean(np.sqrt(np.mean(np.square(y_true - y_pred), axis=0)))
+
+df = load_csv_data("top120_geetl.csv")
+wbdata = load_csv_data("features_wbdata.csv")
+whodata = load_parquet_data("WHO_data_feature.parquet")
+df.drop(columns=['key3.1'],inplace = True)
+
+
+merged_df_1 = merge_dataframes(df,wbdata)
+merged_df = merge_dataframes(merged_df_1,whodata)
+
+
+merged_df.dropna(subset=labels_list(),inplace = True)
+merged_df.reset_index(drop = True, inplace = True)
+
+
+
+#adding temporal features to the merged df where multiple year data is present
+merged_df = add_temporal_features(merged_df)
+
+labels = labels_list()
+# dropping columns with nan count more than 85% and then country region mapping 
+X_train,X_dev,X_test,y_train,y_dev,y_test = split_data_country_wise(country_region_mapping(drop_high_nan((merged_df))))
+
+X_train.drop(columns =['DHSID','WB_Country_Code','WHO_Country_code'],inplace = True)
+X_train = one_hot_encode(X_train,['URBAN_RURA','Country_Code', 'target_region'])
+
+X_dev.drop(columns =['DHSID','WB_Country_Code','WHO_Country_code'],inplace = True)
+X_dev = one_hot_encode(X_dev,['URBAN_RURA','Country_Code', 'target_region'])
+
+X_test.drop(columns =['DHSID','WB_Country_Code','WHO_Country_code'],inplace = True)
+X_test = one_hot_encode(X_test,['URBAN_RURA','Country_Code', 'target_region'])
+
+
+
+
+# Create an instance of the preprocessor for features
+features_preprocessor = DataPreprocessor()
+
+# Fit the preprocessor on the training data
+features_preprocessor.fit(X_train)
+
+# Transform the training, validation, and test data
+X_train_scaled = features_preprocessor.transform(X_train)
+X_dev_scaled = features_preprocessor.transform(X_dev)
+X_test_scaled = features_preprocessor.transform(X_test)
+
+# Create an instance of the preprocessor for targets
+target_preprocessor = TargetPreprocessor()
+
+# Fit the preprocessor on the training target data
+target_preprocessor.fit(y_train)
+
+# Transform the training and validation target data
+y_train_scaled = target_preprocessor.transform(y_train)
+y_dev_scaled = target_preprocessor.transform(y_dev)
+y_test_scaled = target_preprocessor.transform(y_test)
+
+
+# Fit and transform the training data
+print("Fitting and Transforming the Training data")
+X_train_scaled_imputed, fitted_imputer = fit_transform_iterative_imputer(X_train_scaled, n_iter=10)
+
+print("Transforming the Test and Validation data")
+# Transform the validation and test data using the fitted imputer
+X_dev_scaled_imputed = transform_iterative_imputer(X_dev_scaled, fitted_imputer)
+X_test_scaled_imputed = transform_iterative_imputer(X_test_scaled, fitted_imputer)
+
+X_train_scaled_imputed.to_csv("X_train_scaled_imputed.csv",index = False)
+X_dev_scaled_imputed.to_csv("X_dev_scaled_imputed.csv",index = False)
+X_test_scaled_imputed.to_csv("X_test_scaled_imputed.csv",index = False)
+
+y_train_scaled.to_csv("y_train_scaled.csv",index = False)
+y_dev_scaled.to_csv("y_dev_scaled.csv",index = False)
+y_test_scaled.to_csv("y_test_scaled.csv",index = False)
+
+
+
+optuna.logging.set_verbosity(optuna.logging.INFO)
+
+# Define order for the RegressorChain
+
+def objective(trial):
+    # 1. Model selection
+    model_type = trial.suggest_categorical("model_type", ["xgb", "lgb", "cat"])
+    
+    # Define order for the RegressorChain
+    order = [0, 1, 5, 4, 3, 2]
+    
+    # K-fold cross-validation
+    kf = KFold(n_splits=5, shuffle=True, random_state=1)
+    scores = []
+
+    for train_idx, valid_idx in kf.split(X_train_scaled_imputed):
+        X_train_fold = X_train_scaled_imputed[train_idx]
+        y_train_fold = y_train_scaled[train_idx]
+        X_valid_fold = X_train_scaled_imputed[valid_idx]
+        y_valid_fold = y_train_scaled[valid_idx]
+        
+        # 2. Hyperparameter definitions based on the model
+        if model_type == "xgb":
+            model = XGBRegressor(n_jobs=40,
+                random_state=1,
+                learning_rate=trial.suggest_float("xgb_learning_rate", 0.01, 0.3, log=True),
+                n_estimators=trial.suggest_int("xgb_n_estimators", 50, 300),
+                max_depth=trial.suggest_int("xgb_max_depth", 2, 10),
+                min_child_weight=trial.suggest_int("xgb_min_child_weight", 1, 10),
+                subsample=trial.suggest_float("xgb_subsample", 0.5, 1),
+                colsample_bytree=trial.suggest_float("xgb_colsample_bytree", 0.5, 1),
+                reg_alpha=trial.suggest_float("xgb_reg_alpha", 1e-3, 10.0, log=True),
+                reg_lambda=trial.suggest_float("xgb_reg_lambda", 1e-3, 10.0, log=True)
+            )
+            model.fit(X_train_fold, y_train_fold, early_stopping_rounds=10, eval_metric="rmse", eval_set=[(X_valid_fold, y_valid_fold)])
+            
+        elif model_type == "lgb":
+            model = LGBMRegressor(n_jobs=40,
+                random_state=1,
+                learning_rate=trial.suggest_float("lgb_learning_rate", 0.01, 0.3, log=True),
+                n_estimators=trial.suggest_int("lgb_n_estimators", 50, 300),
+                max_depth=trial.suggest_int("lgb_max_depth", 2, 10),
+                num_leaves=trial.suggest_int("lgb_num_leaves", 2, 2**trial.suggest_int("lgb_max_depth", 2, 10)),
+                min_child_samples=trial.suggest_int("lgb_min_child_samples", 5, 100),
+                subsample=trial.suggest_float("lgb_subsample", 0.5, 1),
+                colsample_bytree=trial.suggest_float("lgb_colsample_bytree", 0.5, 1),
+                reg_alpha=trial.suggest_float("lgb_reg_alpha", 1e-3, 10.0, log=True),
+                reg_lambda=trial.suggest_float("lgb_reg_lambda", 1e-3, 10.0, log=True)
+            )
+            model.fit(X_train_fold, y_train_fold, early_stopping_rounds=10, eval_metric="rmse", eval_set=[(X_valid_fold, y_valid_fold)])
+            
+        else:
+            model = CatBoostRegressor(
+                random_seed=1,
+                learning_rate=trial.suggest_float("cat_learning_rate", 0.01, 0.3, log=True),
+                n_estimators=trial.suggest_int("cat_n_estimators", 50, 300),
+                depth=trial.suggest_int("cat_depth", 2, 10),
+                l2_leaf_reg=trial.suggest_float("cat_l2_leaf_reg", 1e-3, 10.0, log=True),
+                border_count=trial.suggest_int("cat_border_count", 5, 200),
+                subsample=trial.suggest_float("cat_subsample", 0.5, 1)
+            )
+            model.fit(X_train_fold, y_train_fold, early_stopping_rounds=10, eval_metric="RMSE", eval_set=[(X_valid_fold, y_valid_fold)], verbose=0)
+        
+        # Model evaluation for this fold
+        chain = RegressorChain(model, order=order)
+        chain.fit(X_train_fold, y_train_fold)
+
+        y_pred_fold = chain.predict(X_valid_fold)
+        y_pred_original = target_preprocessor.inverse_transform(y_pred_fold)
+        scores.append(mcrmse(y_valid_fold, y_pred_original))
+    
+    # Return the average score over all folds
+    return np.mean(scores)
+
+# Hyperparameter optimization
+pruner = optuna.pruners.MedianPruner()
+study = optuna.create_study(direction="minimize", pruner=pruner)
+study.optimize(objective, n_trials=120, n_jobs=-1)  # 40 trials for each model
+
+# Results
+best_trials = {}
+for trial in study.trials:
+    if trial.state == optuna.trial.TrialState.COMPLETE:
+        model_type = trial.params['model_type']
+        if model_type not in best_trials or trial.value < best_trials[model_type].value:
+            best_trials[model_type] = trial
+
+best_params_dict = {}
+for model_type, trial in best_trials.items():
+    print(f"Best parameters for {model_type}: {trial.params}")
+    print(f"Score: {trial.value}")
+    print('-' * 50)
+    best_params_dict[model_type] = trial.params
+
+np.save('best_hyperparams.npy', best_params_dict)
+
+#loading the hyperparams from optuna
+hyperparams = np.load('best_hyperparams.npy', allow_pickle=True).item()
+
+xgb_params = hyperparams['xgb']
+lgb_params = hyperparams['lgb']
+cat_params = hyperparams['cat']
+
+models = [
+    XGBRegressor(n_jobs=40,**xgb_params),
+    LGBMRegressor(n_jobs=40,**lgb_params),
+    CatBoostRegressor(**cat_params)
+]
+
+#finding the best regression chain order using greedyt search and k fold validation
+best_order = greedy_search_order(models, X_train_scaled_imputed, y_train_scaled)
+print(f"Best order found: {best_order}")
+
+
+
+# Initialize the models
+
+
+chains = []
+scores = []
+
+# Train a RegressorChain with each model and calculate validation scores
+for i, model in tqdm(enumerate(models), total=len(models), desc="Training models"):
+    
+    print(f"\n\nTraining model {i+1}/{len(models)}: {model.__class__.__name__}\n")
+    
+    chain = RegressorChain(model, order=best_order, random_state=1)
+    chain.fit(X_train_scaled_imputed, y_train_scaled)
+    chains.append(chain)
+    
+    y_pred_dev_scaled = chain.predict(X_dev_scaled_imputed)
+    
+    # Inverse transform both predictions and targets to original scale
+    y_pred_dev_original = target_preprocessor.inverse_transform(y_pred_dev_scaled)
+    y_dev_original = target_preprocessor.inverse_transform(y_dev_scaled)
+    
+    score = mcrmse(y_dev_original, y_pred_dev_original)
+    scores.append(score)
+    
+    print(f"\nValidation MCRMSE for model {i+1}: {score:.4f}\n")
+    print("="*50)
+
+# Calculate BMA weights based on the inverse of the validation scores
+weights = [1/score for score in scores]
+weights = [weight/sum(weights) for weight in weights]
+
+# Save models, scores, and weights for later use
+joblib.dump(chains, 'chains.joblib')
+joblib.dump(scores, 'scores.joblib')
+joblib.dump(weights, 'weights.joblib')
+
+print("\nComputing the ensemble predictions on the dev set...\n")
+predictions_dev_scaled = [chain.predict(X_dev_scaled_imputed) for chain in chains]
+final_predictions_dev_scaled = np.zeros_like(predictions_dev_scaled[0])
+for weight, prediction in zip(weights, predictions_dev_scaled):
+    final_predictions_dev_scaled += weight * prediction
+
+# Inverse transform for ensemble predictions
+final_predictions_dev_original = target_preprocessor.inverse_transform(final_predictions_dev_scaled)
+final_score_dev = mcrmse(y_dev_original, final_predictions_dev_original)
+print(f"Final ensemble validation MCRMSE: {final_score_dev:.4f}")
+
+print("\nEvaluating on the test set...\n")
+predictions_test_scaled = [chain.predict(X_test_scaled_imputed) for chain in chains]
+final_predictions_test_scaled = np.zeros_like(predictions_test_scaled[0])
+for weight, prediction in zip(weights, predictions_test_scaled):
+    final_predictions_test_scaled += weight * prediction
+
+# Inverse transform for test ensemble predictions
+final_predictions_test_original = target_preprocessor.inverse_transform(final_predictions_test_scaled)
+y_test_original = target_preprocessor.inverse_transform(y_test_scaled)
+final_score_test = mcrmse(y_test_original, final_predictions_test_original)
+print(f"Final ensemble test MCRMSE: {final_score_test:.4f}")
+
+df_sample = load_parquet_data("sample with features.parquet")
+wbdata_sample = load_csv_data("sample_wbdata.csv")
+whodata_Sample = load_csv_data("WHO_data_sample.csv")
+
+merged_df_sample1 = merge_dataframes(df_sample,wbdata_sample)
+merged_df_sample = merge_dataframes(merged_df_sample1,whodata_Sample)
+
+#adding temporal features to the sample
+merged_df_sample = add_temporal_features(merged_df_sample)
+#applying country region mapping
+X_sample = country_region_mapping(merged_df_sample)
+#dropping unncecesarry columns
+X_sample.drop(columns =['DHSID','WB_Country_Code','WHO_Country_code'],inplace = True)
+X_sample = one_hot_encode(X_sample,['URBAN_RURA','Country_Code', 'target_region'])
+X_sample['DHSYEAR'] = X_sample['key3']
+X_sample = X_sample[X_train.columns]
+
+# Convert float32 columns to float64
+float32_cols = X_sample.select_dtypes(include=['float32']).columns
+X_sample[float32_cols] = X_sample[float32_cols].astype('float64')
+
+# Convert non-NaN values to int64
+X_sample.loc[X_sample['DHSYEAR'].notna(), 'DHSYEAR'] = X_sample.loc[X_sample['DHSYEAR'].notna(), 'DHSYEAR'].astype('int64')
+
+
+X_sample_scaled = features_preprocessor.transform(X_sample)
+
+X_sample_scaled_imputed = transform_iterative_imputer(X_sample_scaled, fitted_imputer)
+
+prediction_scaled = make_predictions(X_sample_scaled_imputed)
+
+df_submission = target_preprocessor.inverse_transform(prediction_scaled)
+
+df_sample.reset_index(drop=True,inplace=True)
+df_submission['DHSID'] = df_sample['DHSID']
+
+df_submission = df_submission[["DHSID"]+labels]
+df_submission.to_csv("save.csv",index = False)
+
+df_submission
+
+
+
