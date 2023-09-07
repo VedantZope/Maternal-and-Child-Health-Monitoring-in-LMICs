@@ -40,10 +40,9 @@ At its core, this is a multi-target regression task where dataset features are e
 - `Stunted_Rate`
 
 ## Project Structure and Usage
-------------
+```
 project_root/
 │
-├── LICENSE
 ├── README.md
 ├── data/
 │   ├── external/
@@ -53,7 +52,6 @@ project_root/
 │   │   ├── WBdata_gee/
 │   │   │   ├── data_workflow_code.ipynb
 │   │   │   └── data.csv
-│   │   └── ... (other external data)
 │   ├── interim/
 │   │   └── ... (intermediate data)
 │   ├── processed/
@@ -69,14 +67,14 @@ project_root/
 ├── notebooks/
 │   ├── final_workflow.ipynb   <- Your final workflow notebook
 │   ├── imputation__evaluate.ipynb
-│   ├── hyperparameter-tuning.ipynb
+│   └── hyperparameter-tuning.ipynb
 │
 ├── reports/
 │   ├── mid_term_report.pdf    <- Mid-term report
-│   ├── final_report.pdf       <- Final report
+│   └── final_report.pdf       <- Final report
 │
 └── requirements.txt
-
+```
 ## Authors
 
 - [@VedantZope](https://www.github.com/VedantZope)
