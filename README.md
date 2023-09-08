@@ -8,7 +8,7 @@ Many low- and middle-income countries (LMICs) lack reliable death registers, lea
 
 ## Status
 
-![Project Status: In Progress](https://img.shields.io/badge/Project%20Status-In%20Progress-orange)
+![Completed Status](https://img.shields.io/badge/status-completed-brightgreen.svg)
 ![Contributors](https://img.shields.io/github/contributors/VedantZope/Maternal-and-Child-Health-Monitoring-in-LMICs.svg)
 ![Number of Commits](https://img.shields.io/github/commit-activity/y/VedantZope/Maternal-and-Child-Health-Monitoring-in-LMICs.svg)
 
