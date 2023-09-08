@@ -40,6 +40,7 @@ At its core, this is a multi-target regression task where dataset features are e
 - `Stunted_Rate`
 
 ## Project Structure and Usage
+All the data files have been excluded
 ```
 project_root/
 │
@@ -50,8 +51,8 @@ project_root/
 │   │   │   ├── WB_Sample_workflow.py
 │   │   │   └── WorldBank_sample.csv
 │   │   ├── WBdata_gee/
-│   │   │   ├── data_workflow_code.ipynb
-│   │   │   └── data.csv
+│   │   │   ├── WB_gee_workflow.py
+│   │   │   └── WorldBank_features.csv
 │   ├── interim/
 │   │   └── ... (intermediate data)
 │   ├── processed/
