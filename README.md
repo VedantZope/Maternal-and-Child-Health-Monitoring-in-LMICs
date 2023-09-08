@@ -27,7 +27,7 @@ The datasets, both for training and testing, were majorly extracted from:
 - Demographic and Health Surveys (DHS) covering 59 countries.
 - Diverse sources of satellite imagery.
 
-Additional datasets from sources [xxx,yyy] were used to improve the model's efficacy.
+An additional dataset from the World Bank was used to improve the model's efficacy.
 
 ## Features and Target
 
